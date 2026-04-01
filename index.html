@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>舆情分析系统</title>
+    <!-- 依赖库 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <style>
+        /* ================= 整合 Source 1 及其他全局样式 ================= */
+        :root {
+            --primary-color: #0d6efd;
+            --success-color: #198754;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --info-color: #0dcaf0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow-x: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        #wrapper { min-height: 100vh; }
+
+        #sidebar-wrapper {
+            min-height: 100vh;
+            width: 250px;
+            transition: margin 0.25s ease-out;
+        }
+
+        .sidebar-heading {
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: white;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .list-group-item {
+            padding: 1rem 1.5rem;
+            border: none;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .list-group-item:hover, .list-group-item.active { background-color: rgba(255, 255, 255, 0.1); }
+
+        #page-content-wrapper { width: 100%; min-height: 100vh; }
+
+        .stat-card {
+            border: none; border-radius: 12px; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08); transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .stat-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); }
+        .stat-icon { width: 56px; height: 56px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.75rem; }
+        .stat-value { font-size: 2rem; font-weight: bold; }
+
+        .chart-container { background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08); padding: 1.5rem; }
+        .chart-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; color: #333; }
+
+        .sentiment-badge-positive { background-color: #d4edda; color: #155724; }
+        .sentiment-badge-negative { background-color: #f8d7da; color: #721c24; }
+        .sentiment-badge-neutral { background-color: #e2e3e5; color: #383d41; }
+
+        .ai-card { border: none; border-radius: 12px; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08); transition: transform 0.3s, box-shadow 0.3s; }
+        .ai-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1); }
+        .ai-icon { width: 64px; height: 64px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin-bottom: 1rem; }
+
+        .typing-indicator { display: inline-flex; align-items: center; }
+        .typing-indicator span { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: var(--primary-color); margin: 0 2px; animation: typing 1.4s infinite ease-in-out both; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(3) { animation-delay: -0.16s; }
+        @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+        .report-content { background-color: #f8f9fa; border-radius: 8px; padding: 1.5rem; line-height: 1.8; }
+        .table-container { background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08); overflow: hidden; }
+        .table thead th { background-color: #f8f9fa; border-bottom: 2px solid #dee2e6; font-weight: 600; color: #495057; }
+        .table tbody tr { transition: background-color 0.2s; }
+        .table tbody tr:hover { background-color: #f8f9fa; }
+        .btn-action { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
+
+        #mapHeatmapChart, #heatmapChart { width: 100% !important; height: 500px !important; min-height: 500px !important; position: relative; }
+
+        @media (max-width: 768px) {
+            #sidebar-wrapper { margin-left: -250px; }
+            #wrapper.toggled #sidebar-wrapper { margin-left: 0; }
+            #mapHeatmapChart, #heatmapChart { height: 400px !important; min-height: 400px !important; }
+        }
+
+        /* ================= 整合 Source 8 地图弹窗样式 ================= */
+        #info-panel {
+            position: absolute; right: 20px; top: 20px; width: 260px;
+            background: rgba(2, 21, 41, 0.85); border: 1px solid #00ffff; box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+            border-radius: 4px; z-index: 100; padding: 20px; color: #fff; display: none; pointer-events: auto;
+        }
+        .close-btn { position: absolute; top: 10px; right: 15px; color: #00ffff; cursor: pointer; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <!-- ================= 整合 Source 2 页面骨架 ================= -->
+    <div class="d-flex" id="wrapper">
+        <div class="bg-dark border-right" id="sidebar-wrapper">
+            <div class="sidebar-heading text-center py-4">
+                <i class="bi bi-graph-up-arrow me-2"></i>舆情分析系统
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="#dashboard" class="list-group-item list-group-item-action bg-dark text-white active" data-page="dashboard"><i class="bi bi-speedometer2 me-2"></i>数据仪表盘</a>
+                <a href="#data-list" class="list-group-item list-group-item-action bg-dark text-white" data-page="data-list"><i class="bi bi-table me-2"></i>数据列表</a>
+                <a href="#ai-analysis" class="list-group-item list-group-item-action bg-dark text-white" data-page="ai-analysis"><i class="bi bi-robot me-2"></i>AI 智能分析</a>
+            </div>
+        </div>
+
+        <div id="page-content-wrapper">
+            <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom">
+                <div class="container-fluid">
+                    <button class="btn btn-primary" id="menu-toggle"><i class="bi bi-list"></i></button>
+                    <div class="ms-auto d-flex align-items-center">
+                        <div class="dropdown me-3">
+                            <button class="btn btn-outline-secondary" type="button" id="dateRangeBtn" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-calendar3 me-2"></i><span id="currentDateRange">最近 7 天</span>
+                            </button>
+                            <ul class="dropdown-menu" aria-labelledby="dateRangeBtn">
+                                <li><a class="dropdown-item" href="#" data-range="1">最近 1 天</a></li>
+                                <li><a class="dropdown-item" href="#" data-range="7">最近 7 天</a></li>
+                                <li><a class="dropdown-item" href="#" data-range="30">最近 30 天</a></li>
+                                <li><a class="dropdown-item" href="#" data-range="90">最近 90 天</a></li>
+                            </ul>
+                        </div>
+                        <div class="dropdown">
+                            <button class="btn btn-outline-secondary" type="button" id="userMenu" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-person-circle me-2"></i>管理员
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
+                                <li><a class="dropdown-item" href="#"><i class="bi bi-gear me-2"></i>设置</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="#"><i class="bi bi-box-arrow-right me-2"></i>退出</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+            <div class="container-fluid py-4" id="main-content"></div>
+        </div>
+    </div>
+
+    <!-- 依赖脚本 -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script src="https://unpkg.com/@antv/l7"></script>
+
+    <script>
+        /* ================= 所有 JS 逻辑融合区 ================= */
+
+        // --- 全局变量与核心数据 (Source 5 抽取) ---
+        let currentPage = 'dashboard';
+        let currentDateRange = 7;
+        let isGeneratingReport = false;
+        let isGeneratingSuggestion = false;
+        let filterSentiment = 'all';
+        let filterSource = 'all';
+        let searchKeyword = '';
+        let currentPageNum = 1;
+        const pageSize = 10;
+        let l7Scene = null;
+        let campusHeatmapData = [];
+
+        const mockData = {
+            statistics: { totalData: 12847, positive: 7856, negative: 2341, neutral: 2650, hotTopics: 89, riskAlerts: 12 },
+            trendData: {
+                dates: ['3-23', '3-24', '3-25', '3-26', '3-27', '3-28', '3-29'],
+                positive: [890, 950, 1020, 1100, 1180, 1250, 1320],
+                negative: [280, 320, 350, 380, 360, 340, 320],
+                neutral: [320, 350, 370, 390, 400, 410, 420]
+            },
+            sourceDistribution: [ { name: '微博', value: 4520 }, { name: '知乎', value: 2850 }, { name: '微信公众号', value: 2230 }, { name: '抖音', value: 1680 }, { name: '新闻网站', value: 890 }, { name: '其他', value: 677 } ],
+            hotTopics: [
+                { rank: 1, title: '人工智能应用场景扩展', trend: 'up', heat: 9876 }, { rank: 2, title: '新能源汽车销量再创新高', trend: 'up', heat: 8543 },
+                { rank: 3, title: '5G网络覆盖普及', trend: 'stable', heat: 7234 }, { rank: 4, title: '在线教育质量提升', trend: 'up', heat: 6123 },
+                { rank: 5, title: '绿色低碳生活方式', trend: 'up', heat: 5432 }, { rank: 6, title: '医疗健康数字化', trend: 'down', heat: 4890 },
+                { rank: 7, title: '乡村振兴新进展', trend: 'stable', heat: 4234 }, { rank: 8, title: '直播电商规范化', trend: 'up', heat: 3876 },
+                { rank: 9, title: '城市精细化管理', trend: 'down', heat: 3456 }, { rank: 10, title: '金融科技创新', trend: 'stable', heat: 3123 }
+            ],
+            dataList: [
+                { id: 1, title: 'AI技术在医疗领域的应用前景广阔', source: '知乎', author: '科技前沿', publishTime: '2026-03-29 14:32', sentiment: 'positive', views: 12850, comments: 892, likes: 3456 },
+                { id: 2, title: '某产品质量问题引发消费者担忧', source: '微博', author: '消费者之声', publishTime: '2026-03-29 13:15', sentiment: 'negative', views: 45678, comments: 2341, likes: 1234 },
+                { id: 3, title: '城市公园建设最新进展报道', source: '新闻网站', author: '本地新闻', publishTime: '2026-03-29 11:45', sentiment: 'neutral', views: 3456, comments: 123, likes: 567 },
+                { id: 4, title: '春季养生：如何科学饮食', source: '微信公众号', author: '健康生活', publishTime: '2026-03-29 10:20', sentiment: 'positive', views: 8900, comments: 456, likes: 2345 },
+                { id: 5, title: '交通拥堵问题亟待解决', source: '微博', author: '市民爆料', publishTime: '2026-03-29 09:10', sentiment: 'negative', views: 12345, comments: 876, likes: 456 },
+                { id: 6, title: '教育政策新解读：双减成果', source: '知乎', author: '教育专家', publishTime: '2026-03-28 22:30', sentiment: 'positive', views: 6789, comments: 345, likes: 1234 },
+                { id: 7, title: '房产市场最新动态分析', source: '新闻网站', author: '财经观察', publishTime: '2026-03-28 20:15', sentiment: 'neutral', views: 4567, comments: 234, likes: 567 },
+                { id: 8, title: '新能源汽车充电便利性提升', source: '微信公众号', author: '汽车之家', publishTime: '2026-03-28 18:45', sentiment: 'positive', views: 10234, comments: 567, likes: 2890 },
+                { id: 9, title: '网络安全事件频发引关注', source: '微博', author: '安全专家', publishTime: '2026-03-28 16:20', sentiment: 'negative', views: 23456, comments: 1234, likes: 678 },
+                { id: 10, title: '旅游业复苏迹象明显', source: '新闻网站', author: '旅游周刊', publishTime: '2026-03-28 14:10', sentiment: 'positive', views: 5678, comments: 345, likes: 890 }
+            ]
+        };
+
+        // --- 路由初始化 (Source 5) ---
+        document.addEventListener('DOMContentLoaded', function() {
+            initNavigation();
+            initDateRange();
+            loadPage('dashboard');
+        });
+
+        function initNavigation() {
+            const menuToggle = document.getElementById('menu-toggle');
+            if (menuToggle) {
+                menuToggle.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    document.getElementById('wrapper').classList.toggle('toggled');
+                });
+            }
+            const sidebarItems = document.querySelectorAll('#sidebar-wrapper .list-group-item');
+            sidebarItems.forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const page = this.getAttribute('data-page');
+                    sidebarItems.forEach(i => i.classList.remove('active'));
+                    this.classList.add('active');
+                    loadPage(page);
+                });
+            });
+        }
+
+        function initDateRange() {
+            const dropdownItems = document.querySelectorAll('.dropdown-item[data-range]');
+            dropdownItems.forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    currentDateRange = parseInt(this.getAttribute('data-range'));
+                    document.getElementById('currentDateRange').textContent = this.textContent;
+                    refreshPage();
+                });
+            });
+        }
+
+        function loadPage(page) {
+            currentPage = page;
+            const mainContent = document.getElementById('main-content');
+            if (page === 'dashboard') renderDashboardPage(mainContent);
+            else if (page === 'data-list') renderDataListPage(mainContent);
+            else if (page === 'ai-analysis') renderAIAnalysisPage(mainContent);
+        }
+
+        function refreshPage() { loadPage(currentPage); }
+
+        // --- 数据仪表盘渲染 (Source 6) ---
+        function renderDashboardPage(container) {
+            container.innerHTML = `
+                <div class="row mb-4">
+                    <div class="col-md-3 mb-3"><div class="stat-card card p-4"><div class="d-flex align-items-center"><div class="stat-icon bg-primary text-white me-3"><i class="bi bi-database"></i></div><div><h6 class="text-muted mb-0">数据总量</h6><div class="stat-value text-primary">${mockData.statistics.totalData.toLocaleString()}</div></div></div></div></div>
+                    <div class="col-md-3 mb-3"><div class="stat-card card p-4"><div class="d-flex align-items-center"><div class="stat-icon bg-success text-white me-3"><i class="bi bi-emoji-smile"></i></div><div><h6 class="text-muted mb-0">正面舆情</h6><div class="stat-value text-success">${mockData.statistics.positive.toLocaleString()}</div></div></div></div></div>
+                    <div class="col-md-3 mb-3"><div class="stat-card card p-4"><div class="d-flex align-items-center"><div class="stat-icon bg-danger text-white me-3"><i class="bi bi-emoji-frown"></i></div><div><h6 class="text-muted mb-0">负面舆情</h6><div class="stat-value text-danger">${mockData.statistics.negative.toLocaleString()}</div></div></div></div></div>
+                    <div class="col-md-3 mb-3"><div class="stat-card card p-4"><div class="d-flex align-items-center"><div class="stat-icon bg-warning text-dark me-3"><i class="bi bi-fire"></i></div><div><h6 class="text-muted mb-0">热门话题</h6><div class="stat-value text-warning">${mockData.statistics.hotTopics}</div></div></div></div></div>
+                </div>
+
+                <div class="row">
+                    <div class="col-lg-8 mb-4"><div class="chart-container"><h5 class="chart-title"><i class="bi bi-graph-up-arrow me-2"></i>情感趋势分析</h5><div id="trendChart" style="height: 400px;"></div></div></div>
+                    <div class="col-lg-4 mb-4"><div class="chart-container h-100"><h5 class="chart-title"><i class="bi bi-pie-chart me-2"></i>数据来源分布</h5><div id="sourceChart" style="height: 350px;"></div></div></div>
+                </div>
+
+                <div class="row">
+                    <div class="col-lg-6 mb-4"><div class="chart-container"><h5 class="chart-title"><i class="bi bi-trophy me-2"></i>热门话题排行</h5><div class="hot-topics-list">${renderHotTopics()}</div></div></div>
+                    <div class="col-lg-6 mb-4"><div class="chart-container"><h5 class="chart-title"><i class="bi bi-exclamation-triangle me-2"></i>风险预警</h5>${renderRiskAlerts()}</div></div>
+                </div>
+
+                <div class="row">
+                    <div class="col-12 mb-4">
+                        <div class="chart-container">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="chart-title mb-0"><i class="bi bi-geo-alt me-2"></i>高校地图热力图</h5>
+                            </div>
+                            <div id="mapHeatmapContainer" style="min-height: 500px; position: relative;">
+                                <div id="mapHeatmapChart" style="width: 100%; height: 500px; background: #020508;">
+                                    <!-- 融合 Source 8 的弹窗结构 -->
+                                    <div id="info-panel">
+                                      <div class="close-btn" onclick="closeInfoPanel()">✖</div>
+                                      <h3 id="panel-title" style="margin-top: 0; color: #00ffff; border-bottom: 1px solid rgba(0,255,255,0.3); padding-bottom: 10px;">学校名称</h3>
+                                      <p style="font-size: 14px; color: #ccc;">当前状态：<span id="panel-status" style="color:#00ff00;">优</span></p>
+                                      <p style="font-size: 14px; color: #ccc;">监测数值：<span id="panel-value" style="color:#00ffff; font-size: 24px; font-weight: bold;">0</span></p>
+                                      <p style="font-size: 12px; line-height: 1.6; color: #aaa;">这是通过点击触发弹出的详细信息面板，您可以随意修改这里的业务内容。</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-3 p-3 bg-light rounded small">
+                                <button type="button" class="btn btn-primary btn-sm" onclick="initMapHeatmap()"><i class="bi bi-play-fill me-1"></i> 手动加载地图</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            setTimeout(() => { initTrendChart(); initSourceChart(); initMapHeatmap(); }, 100);
+        }
+
+        function renderHotTopics() {
+            return mockData.hotTopics.map(topic => {
+                const trendIcon = topic.trend === 'up' ? 'bi-arrow-up text-success' : topic.trend === 'down' ? 'bi-arrow-down text-danger' : 'bi-dash text-secondary';
+                return `<div class="d-flex align-items-center py-2 border-bottom"><span class="fw-bold me-3" style="width: 24px; text-align: center;">${topic.rank}</span><span class="flex-grow-1">${topic.title}</span><span class="text-muted small me-2">${topic.heat.toLocaleString()}</span><i class="bi ${trendIcon}"></i></div>`;
+            }).join('');
+        }
+
+        function renderRiskAlerts() {
+            const alerts = [
+                { level: 'high', title: '某高校负面舆情快速上升', time: '2小时前', description: '相关讨论量在2小时内增长了300%' },
+                { level: 'medium', title: '校园活动热议', time: '4小时前', description: '某校园活动引发广泛讨论，关注度较高' },
+                { level: 'low', title: '教学政策调整传闻', time: '1天前', description: '网传教学政策可能调整，建议关注官方消息' }
+            ];
+            const levelColors = { high: 'danger', medium: 'warning', low: 'info' };
+            return alerts.map(alert => `<div class="alert alert-${levelColors[alert.level]} mb-3" role="alert"><div class="d-flex justify-content-between align-items-start"><div><h6 class="alert-heading mb-1"><i class="bi bi-exclamation-circle me-2"></i>${alert.title}</h6><p class="mb-0 small">${alert.description}</p></div><span class="small text-muted">${alert.time}</span></div></div>`).join('');
+        }
+
+        function initTrendChart() {
+            const chartDom = document.getElementById('trendChart');
+            if (!chartDom) return;
+            const myChart = echarts.init(chartDom);
+            const option = { tooltip: { trigger: 'axis' }, legend: { data: ['正面', '负面', '中性'], top: 0 }, grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true, top: 50 }, xAxis: { type: 'category', boundaryGap: false, data: mockData.trendData.dates }, yAxis: { type: 'value' }, series: [ { name: '正面', type: 'line', smooth: true, stack: 'Total', data: mockData.trendData.positive, itemStyle: { color: '#198754' }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [ { offset: 0, color: 'rgba(25, 135, 84, 0.5)' }, { offset: 1, color: 'rgba(25, 135, 84, 0.1)' } ] } } }, { name: '负面', type: 'line', smooth: true, stack: 'Total', data: mockData.trendData.negative, itemStyle: { color: '#dc3545' }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [ { offset: 0, color: 'rgba(220, 53, 69, 0.5)' }, { offset: 1, color: 'rgba(220, 53, 69, 0.1)' } ] } } }, { name: '中性', type: 'line', smooth: true, stack: 'Total', data: mockData.trendData.neutral, itemStyle: { color: '#6c757d' }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [ { offset: 0, color: 'rgba(108, 117, 125, 0.5)' }, { offset: 1, color: 'rgba(108, 117, 125, 0.1)' } ] } } } ] };
+            myChart.setOption(option);
+            window.addEventListener('resize', () => myChart.resize());
+        }
+
+        function initSourceChart() {
+            const chartDom = document.getElementById('sourceChart');
+            if (!chartDom) return;
+            const myChart = echarts.init(chartDom);
+            const option = { tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' }, legend: { orient: 'vertical', left: 'left', top: 'center' }, series: [ { name: '数据来源', type: 'pie', radius: ['40%', '70%'], center: ['65%', '50%'], avoidLabelOverlap: false, itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 }, label: { show: false, position: 'center' }, emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } }, labelLine: { show: false }, data: mockData.sourceDistribution } ], color: ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272'] };
+            myChart.setOption(option);
+            window.addEventListener('resize', () => myChart.resize());
+        }
+
+        // ================= Source 8 交互地图逻辑注入 =================
+        function closeInfoPanel() {
+            document.getElementById('info-panel').style.display = 'none';
+            if (l7Scene) l7Scene.setZoomAndCenter(13.2, [118.926, 32.103]); 
+        }
+
+        function initMapHeatmap() {
+            if (l7Scene) { l7Scene.destroy(); }
+            
+            l7Scene = new L7.Scene({
+                id: 'mapHeatmapChart',
+                map: new L7.Map({
+                    style: 'dark',
+                    center: [118.926, 32.103],
+                    pitch: 52,
+                    zoom: 13.2,
+                    dragPan: false,         
+                    scrollZoom: false,      
+                    doubleClickZoom: false, 
+                    touchZoom: false,       
+                    minZoom: 13.2,
+                    maxZoom: 16             
+                })
+            });
+
+            const valueMap = {
+                "南京师范大学(仙林校区)": 95, "南京邮电大学仙林校区": 70,
+                "南京财经大学仙林校区": 40, "南京中医药大学仙林校区": 20,
+                "南京审计大学金审学院": 10, "南京理工大学紫金学院": 50
+            };
+
+            l7Scene.on('loaded', () => {
+                // 1. 底座层
+                const baseLayer = new L7.PolygonLayer({ zIndex: 0, pick: false })
+                    .source({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[118.7, 31.9], [119.2, 31.9], [119.2, 32.3], [118.7, 32.3], [118.7, 31.9]]] } }] })
+                    .shape('fill').color('#0c1622').style({ opacity: 1 });
+                l7Scene.addLayer(baseLayer);
+
+                // ================= 🚨 注意这里的路径 🚨 =================
+                // 2. 道路层
+                fetch('./clean_roads.geojson').then(res => res.json()).then(data => {
+                    const roadGlow = new L7.LineLayer({ zIndex: 1, pick: false }).source(data).size(2.5).color('#00ffff').style({ opacity: 0.3, blur: 3.0 });
+                    const roadMain = new L7.LineLayer({ zIndex: 2, pick: false }).source(data).size(0.6).color('#b3ffff').style({ opacity: 0.8 });
+                    l7Scene.addLayer(roadGlow); l7Scene.addLayer(roadMain);
+                }).catch(e => console.error("道路数据加载失败，请检查路径:", e));
+
+                // ================= 🚨 注意这里的路径 🚨 =================
+                // 3. 校园主体
+                fetch('./xianlin.geojson').then(res => res.json()).then(data => {
+                    data.features.forEach(f => { f.properties.value = valueMap[f.properties.name] || 50; });
+
+                    const campusSolidGlow = new L7.PolygonLayer({ zIndex: 10, pick: true })
+                        .source(data).shape('extrude').size(35).color('value', ['#0a2a4d', '#1a5ea8', '#14b4a3', '#00ffff'])
+                        .style({ opacity: 0.8, sourceColor: '#001a33', targetColor: '#ffffff', lightEnable: true, opacityLinear: { enable: true, dir: 'up' } });
+
+                    campusSolidGlow.on('click', (e) => {
+                        const name = e.feature.properties.name || "";
+                        if (name.includes("南京师范大学") || name) {
+                            l7Scene.setZoomAndCenter(15, [e.lngLat.lng, e.lngLat.lat]);
+                            document.getElementById('panel-title').innerText = name;
+                            document.getElementById('panel-value').innerText = e.feature.properties.value;
+                            document.getElementById('info-panel').style.display = 'block';
+                        }
+                    });
+
+                    const campusTopLine = new L7.LineLayer({ zIndex: 11, pick: false }).source(data).shape('line').size(1.2).color('#ffffff').style({ opacity: 1 });
+                    const campusTopBloom = new L7.LineLayer({ zIndex: 12, pick: false }).source(data).shape('line').color('#00ffff').size(15).style({ opacity: 0.4, blur: 5.0 });
+                    const campusBottomGlow = new L7.LineLayer({ zIndex: 5, pick: false }).source(data).shape('line').color('#00ffff').size(18).style({ opacity: 0.5, blur: 5 });
+                    const campusLabel = new L7.PointLayer({ zIndex: 20, pick: false }).source(data).shape('name', 'text').size(9).color('#00ffff').style({ textOffset: [0, 20], halo: '#000', haloWidth: 1.5 });
+
+                    l7Scene.addLayer(campusBottomGlow); l7Scene.addLayer(campusSolidGlow);
+                    l7Scene.addLayer(campusTopLine); l7Scene.addLayer(campusTopBloom); l7Scene.addLayer(campusLabel);
+                }).catch(e => console.error("校园数据加载失败，请检查路径:", e));
+            });
+        }
+
+        // --- 数据列表渲染 (Source 7) ---
+        function renderDataListPage(container) {
+            container.innerHTML = `
+                <div class="row mb-4"><div class="col-12"><div class="card border-0 shadow-sm"><div class="card-body"><div class="row g-3">
+                    <div class="col-md-4"><div class="input-group"><span class="input-group-text"><i class="bi bi-search"></i></span><input type="text" class="form-control" id="searchInput" placeholder="搜索关键词..."></div></div>
+                    <div class="col-md-3"><select class="form-select" id="sentimentFilter"><option value="all">全部情感</option><option value="positive">正面</option><option value="negative">负面</option><option value="neutral">中性</option></select></div>
+                    <div class="col-md-3"><select class="form-select" id="sourceFilter"><option value="all">全部来源</option><option value="微博">微博</option><option value="知乎">知乎</option><option value="微信公众号">微信公众号</option><option value="抖音">抖音</option><option value="新闻网站">新闻网站</option></select></div>
+                    <div class="col-md-2"><button class="btn btn-primary w-100" id="filterBtn"><i class="bi bi-filter me-2"></i>筛选</button></div>
+                </div></div></div></div></div>
+                <div class="table-container"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th style="width: 50px;">ID</th><th>标题</th><th style="width: 100px;">来源</th><th style="width: 100px;">作者</th><th style="width: 100px;">情感倾向</th><th style="width: 100px;">浏览量</th><th style="width: 100px;">评论数</th><th style="width: 150px;">发布时间</th><th style="width: 120px;">操作</th></tr></thead><tbody id="dataTableBody"></tbody></table></div></div>
+                <div class="row mt-4"><div class="col-12 d-flex justify-content-between align-items-center"><div class="text-muted" id="pageInfo"></div><nav><ul class="pagination mb-0" id="pagination"></ul></nav></div></div>
+            `;
+            initFilters(); renderTable();
+        }
+
+        function initFilters() {
+            document.getElementById('searchInput').addEventListener('input', (e) => searchKeyword = e.target.value.toLowerCase());
+            document.getElementById('sentimentFilter').addEventListener('change', (e) => filterSentiment = e.target.value);
+            document.getElementById('sourceFilter').addEventListener('change', (e) => filterSource = e.target.value);
+            document.getElementById('filterBtn').addEventListener('click', () => { currentPageNum = 1; renderTable(); });
+            document.getElementById('searchInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') { currentPageNum = 1; renderTable(); } });
+        }
+
+        function getFilteredData() {
+            return mockData.dataList.filter(item => {
+                const matchSearch = !searchKeyword || item.title.toLowerCase().includes(searchKeyword);
+                const matchSentiment = filterSentiment === 'all' || item.sentiment === filterSentiment;
+                const matchSource = filterSource === 'all' || item.source === filterSource;
+                return matchSearch && matchSentiment && matchSource;
+            });
+        }
+
+        function renderTable() {
+            const filteredData = getFilteredData();
+            const totalPages = Math.ceil(filteredData.length / pageSize);
+            const startIndex = (currentPageNum - 1) * pageSize;
+            const pageData = filteredData.slice(startIndex, startIndex + pageSize);
+
+            document.getElementById('dataTableBody').innerHTML = pageData.map(item => `
+                <tr><td>${item.id}</td><td><a href="#" class="text-decoration-none" onclick="viewDetail(${item.id})">${item.title}</a></td><td><span class="badge bg-secondary">${item.source}</span></td><td>${item.author}</td><td>${getSentimentBadge(item.sentiment)}</td><td>${item.views.toLocaleString()}</td><td>${item.comments.toLocaleString()}</td><td><small class="text-muted">${item.publishTime}</small></td><td><button class="btn btn-sm btn-outline-primary btn-action me-1" onclick="viewDetail(${item.id})"><i class="bi bi-eye"></i></button><button class="btn btn-sm btn-outline-secondary btn-action" onclick="exportItem(${item.id})"><i class="bi bi-download"></i></button></td></tr>
+            `).join('');
+            document.getElementById('pageInfo').textContent = `共 ${filteredData.length} 条数据，第 ${currentPageNum}/${totalPages || 1} 页`;
+            renderPagination(totalPages);
+        }
+
+        function getSentimentBadge(sentiment) {
+            const config = { positive: { class: 'sentiment-badge-positive', text: '正面' }, negative: { class: 'sentiment-badge-negative', text: '负面' }, neutral: { class: 'sentiment-badge-neutral', text: '中性' } };
+            const c = config[sentiment] || config.neutral;
+            return `<span class="badge rounded-pill ${c.class}">${c.text}</span>`;
+        }
+
+        function renderPagination(totalPages) {
+            if (totalPages <= 1) { document.getElementById('pagination').innerHTML = ''; return; }
+            let html = `<li class="page-item ${currentPageNum === 1 ? 'disabled' : ''}"><a class="page-link" href="#" onclick="goToPage(${currentPageNum - 1})"><i class="bi bi-chevron-left"></i></a></li>`;
+            for (let i = Math.max(1, currentPageNum - 2); i <= Math.min(totalPages, Math.max(1, currentPageNum - 2) + 4); i++) {
+                html += `<li class="page-item ${i === currentPageNum ? 'active' : ''}"><a class="page-link" href="#" onclick="goToPage(${i})">${i}</a></li>`;
+            }
+            html += `<li class="page-item ${currentPageNum === totalPages ? 'disabled' : ''}"><a class="page-link" href="#" onclick="goToPage(${currentPageNum + 1})"><i class="bi bi-chevron-right"></i></a></li>`;
+            document.getElementById('pagination').innerHTML = html;
+        }
+
+        function goToPage(page) {
+            if (page < 1 || page > Math.ceil(getFilteredData().length / pageSize)) return;
+            currentPageNum = page; renderTable(); window.scrollTo(0, 0);
+        }
+        function viewDetail(id) { alert(`查看详情 ID: ${id}`); }
+        function exportItem(id) { alert(`导出数据 ID: ${id}`); }
+
+        // --- AI 智能分析 (Source 4) ---
+        function renderAIAnalysisPage(container) {
+            container.innerHTML = `
+                <div class="row mb-4"><div class="col-12"><h3 class="mb-0"><i class="bi bi-robot text-primary me-2"></i>AI 智能分析</h3></div></div>
+                <div class="row mb-4">
+                    <div class="col-md-6 mb-3"><div class="ai-card card p-4 text-center h-100"><div class="ai-icon bg-primary bg-opacity-10 text-primary mx-auto"><i class="bi bi-file-earmark-text"></i></div><h5 class="mb-2">生成周报</h5><button class="btn btn-primary btn-lg mt-3" id="generateReportBtn"><i class="bi bi-magic me-2"></i>立即生成</button></div></div>
+                    <div class="col-md-6 mb-3"><div class="ai-card card p-4 text-center h-100"><div class="ai-icon bg-success bg-opacity-10 text-success mx-auto"><i class="bi bi-lightbulb"></i></div><h5 class="mb-2">智能建议</h5><button class="btn btn-success btn-lg mt-3" id="generateSuggestionBtn"><i class="bi bi-wand-magic-sparkles me-2"></i>获取建议</button></div></div>
+                </div>
+                <div class="row mb-4" id="reportSection" style="display: none;"><div class="col-12"><div class="chart-container"><h5 class="chart-title"><i class="bi bi-file-earmark-bar-graph me-2"></i>舆情分析周报</h5><div class="report-content" id="reportContent"></div></div></div></div>
+                <div class="row" id="suggestionSection" style="display: none;"><div class="col-12"><div class="chart-container"><h5 class="chart-title"><i class="bi bi-chat-square-dots me-2"></i>AI 智能建议</h5><div id="suggestionContent"></div></div></div></div>
+            `;
+            document.getElementById('generateReportBtn').addEventListener('click', generateReport);
+            document.getElementById('generateSuggestionBtn').addEventListener('click', generateSuggestions);
+        }
+
+        function generateReport() {
+            if (isGeneratingReport) return;
+            isGeneratingReport = true;
+            const btn = document.getElementById('generateReportBtn');
+            btn.disabled = true; btn.innerHTML = `<span class="typing-indicator me-2"><span></span><span></span><span></span></span>AI 正在分析中...`;
+            setTimeout(() => {
+                document.getElementById('reportContent').innerHTML = `<h6>分析完成。正面舆情占比 ${((mockData.statistics.positive/mockData.statistics.totalData)*100).toFixed(1)}%。</h6>`;
+                document.getElementById('reportSection').style.display = 'block';
+                btn.disabled = false; btn.innerHTML = '<i class="bi bi-magic me-2"></i>重新生成';
+                isGeneratingReport = false;
+            }, 2000);
+        }
+
+        function generateSuggestions() {
+            if (isGeneratingSuggestion) return;
+            isGeneratingSuggestion = true;
+            const btn = document.getElementById('generateSuggestionBtn');
+            btn.disabled = true; btn.innerHTML = `<span class="typing-indicator me-2"><span></span><span></span><span></span></span>AI 正在思考中...`;
+            setTimeout(() => {
+                document.getElementById('suggestionContent').innerHTML = `<div class="alert alert-danger mb-3" role="alert">建议：快速响应负面舆情</div>`;
+                document.getElementById('suggestionSection').style.display = 'block';
+                btn.disabled = false; btn.innerHTML = '<i class="bi bi-wand-magic-sparkles me-2"></i>重新生成';
+                isGeneratingSuggestion = false;
+            }, 2000);
+        }
+    </script>
+</body>
+</html>
